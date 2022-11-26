@@ -1,9 +1,10 @@
 [project]
 name = "dnf-humbug"
-version = "0.0.3"
+version = "0.0.5"
 dependencies = [
     "textual",
 ]
+description = "List and sort user-installed files according to dnf"
 license = {text = "GPL-2.0-or-later"}
 readme = "README.md"
 
