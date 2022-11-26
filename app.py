@@ -73,53 +73,67 @@ def filter_packages(packages, depends, rdepends):
                 non_binaries.append(pkg)
     return binaries, non_binaries, has_deps, non_deps
 
+from textual.widgets import DataTable
+from textual import events
+from textual.message import Message, MessageTarget
 
-class ListDisplay(Static):
+class ListDisplay(DataTable):
     """Widget of our list of thingies."""
 
-    def done_on_mount(self):
+    class RowChanged(Message):
+        """Event sent when we change the displayed package in the list."""
+        def __init__(self, sender: MessageTarget, package: str) -> None:
+            self.package = package
+            super().__init__(sender)
+
+    async def send_row_changed(self) -> None:
+        """Send an row changed update event."""
+        package_name = self.data[self.cursor_cell.row][0]
+        await self.emit(self.RowChanged(self, package=package_name))
+
+    async def key_down(self, event: events.Key) -> None:
+        """Hooked into key down to send row changed event to the app."""
+        super().key_down(event)
+        await self.send_row_changed()
+
+    async def key_up(self, event: events.Key) -> None:
+        """Hooked into key up to send row changed event to the app."""
+        super().key_up(event)
+        await self.send_row_changed()
+
+    def on_mount(self):
         """Stylish"""
         self.styles.background = "darkblue"
         self.styles.border = ("round", "white")
+
         packages, depends, rdepends = scan_packges()
         binaries, non_binaries, has_deps, non_deps = filter_packages(packages,
                                                                      depends,
                                                                      rdepends)
-        t = Table(title="Packages marked as user installed")
-        t.add_column("name")
-        t.add_column("dependencies")
-        t.add_column("dependents")
+        self.add_column("name")
+        self.add_column("dependencies")
+        self.add_column("dependents")
         for pkg in  has_deps:
             for pkg in non_binaries:
-                t.add_row(str(pkg)   )
-        self.update(t)
+                self.add_row(str(pkg))
 
-    def on_mount(self):
-        """Stylish"""
-        self.styles.background = "darkblue"
-        self.styles.border = ("round", "white")
-        self.update("I have been mounted")
 
-    def on_selected(self):
-        self.update("Now I am selected")
+from textual.reactive import reactive
 
 
 class InfoDisplay(Static):
     """Widget of the information pane."""
+    text = reactive("text")
+
+    def render(self) -> str:
+        return f"info: {self.text}!"
+
     def on_mount(self):
         """Stylish"""
         self.styles.border = ("round", "yellow")
-        self.styles.height = "15%"
+        self.styles.dock = "bottom"
         self.styles.width = "100%"
-
-
-class That(Static):
-    """The widget we use."""
-    def compose(self) -> ComposeResult:
-        """Create child widgets of the app."""
-        yield ListDisplay()
-        yield InfoDisplay("no info", id="info")
-        yield Button("Start", id="start", variant="success")
+        self.styles.height = "30%"
 
 
 class ThatApp(App):
@@ -130,6 +144,12 @@ class ThatApp(App):
         ("spacebar", "show_info", "Show more info"),
         ("escape", "exit_app", "Time to escape"),
     ]
+
+
+    def on_list_display_row_changed(self, message: ListDisplay.RowChanged) -> None:
+        """Recieves RowChanged events from ListDisplay class."""
+        self.query_one(InfoDisplay).text = message.package
+
 
     async def on_input_changed(self, message: Input.Changed) -> None:
         """Event handler on input."""
@@ -146,15 +166,16 @@ class ThatApp(App):
     def on_mount(self, event: events.Mount) -> None:
         self.query_one(ListDisplay).focus()
 
-    def on_list_display_selected(self):
-        self.query_one(ListDisplay).update("Selected once")
+#    def on_list_display_selected(self):
+#        self.query_one(ListDisplay).update("Selected once")
 
 
     def compose(self) -> ComposeResult:
         """Create child widgets for that App."""
         yield Header()
+        yield ListDisplay()
+        yield InfoDisplay("no info", id="info")
         yield Footer()
-        yield Container(That())
 
     def action_toggle_dark(self) -> None:
         """An action to toggle dark mode."""
@@ -163,7 +184,6 @@ class ThatApp(App):
     def action_show_info(self) -> None:
         """When we want more info."""
         self.query_one("#info").update("Show info")
-        self.query_one("#start").update("Show info")
 
     def action_exit_app(self) -> None:
         """When we want out."""
