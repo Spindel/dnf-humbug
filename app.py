@@ -1,3 +1,9 @@
+import os
+import asyncio
+
+import dnf
+import libdnf.transaction
+
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, Input
 
@@ -5,12 +11,9 @@ from textual.widgets import Header, Footer, Input
 from textual.containers import Container
 from textual.widgets import Button, Header, Footer, Static
 from textual import events
-import asyncio
-
-from rich.table import Table
-import os
-import dnf
-import libdnf.transaction
+from textual.widgets import DataTable
+from textual import events
+from textual.message import Message, MessageTarget
 
 
 def scan_packges():
@@ -53,43 +56,61 @@ def scan_packges():
 
     return packages, depends, rdepends
 
+from dataclasses import dataclass
+from typing import Any, List
+
+@dataclass
+class Package:
+    """Package that we may want to remove."""
+    name: str
+    needed_by: int
+    info: str
+    has_binaries: bool
+    _pkg: Any
+    _rdepends: List[Any]
+
+    def __repr__(self) -> str:
+        return self.name
+
+    def __str__(self) -> str:
+        return self.name
+
 
 def filter_packages(packages, depends, rdepends):
-    binaries = []
-    non_binaries = []
-    has_deps = []
-    non_deps = []
-
+    result = []
     print("Filtering results")
     for i, pkg in enumerate(packages):
         if pkg.reason == "user":
-            if rdepends[i]:
-                has_deps.append(pkg)
-            else:
-                non_deps.append(pkg)
-            if any('/usr/bin' in s for s in pkg.files):
-                binaries.append(pkg)
-            else:
-                non_binaries.append(pkg)
-    return binaries, non_binaries, has_deps, non_deps
+            has_binaries = any("bin/" in s for s in pkg.files)
+            needed_by = len(rdepends[i])
+            _rdepends = [str(packages[n]) for n in rdepends[i]]
 
-from textual.widgets import DataTable
-from textual import events
-from textual.message import Message, MessageTarget
+            p = Package(name=str(pkg), needed_by=needed_by,
+                        info=pkg.description, has_binaries=has_binaries,
+                        _pkg=pkg, _rdepends=_rdepends)
+            result.append(p)
+    return result
+
+
 
 class ListDisplay(DataTable):
     """Widget of our list of thingies."""
+    def __init__(self, *args, **kws):
+        super().__init__(*args, **kws)
+        self.pkgs = {}
 
     class RowChanged(Message):
         """Event sent when we change the displayed package in the list."""
-        def __init__(self, sender: MessageTarget, package: str) -> None:
+        def __init__(self, sender: MessageTarget, package: Package) -> None:
             self.package = package
             super().__init__(sender)
 
     async def send_row_changed(self) -> None:
         """Send an row changed update event."""
         package_name = self.data[self.cursor_cell.row][0]
-        await self.emit(self.RowChanged(self, package=package_name))
+        package = self.pkgs.get(package_name)
+        if package is not None:
+            await self.emit(self.RowChanged(self, package=package))
 
     async def key_down(self, event: events.Key) -> None:
         """Hooked into key down to send row changed event to the app."""
@@ -101,21 +122,42 @@ class ListDisplay(DataTable):
         super().key_up(event)
         await self.send_row_changed()
 
-    def on_mount(self):
+    async def on_mount(self):
         """Stylish"""
         self.styles.background = "darkblue"
         self.styles.border = ("round", "white")
+        self.add_column("name")
+        self.add_column("binaries")
+        self.add_column("dependents")
 
         packages, depends, rdepends = scan_packges()
-        binaries, non_binaries, has_deps, non_deps = filter_packages(packages,
-                                                                     depends,
-                                                                     rdepends)
-        self.add_column("name")
-        self.add_column("dependencies")
-        self.add_column("dependents")
-        for pkg in  has_deps:
-            for pkg in non_binaries:
-                self.add_row(str(pkg))
+        filtered = filter_packages(packages, depends, rdepends)
+
+        for pkg in filtered:
+            self.pkgs[pkg.name] = pkg
+        # Quite likely, no binaries, and nothing needs it.
+        # Could be dev package, etc.
+        for pkg in filtered:
+            if (not pkg.has_binaries) and pkg.needed_by > 0:
+                self.add_row(pkg.name, str(pkg.has_binaries), str(pkg.needed_by))
+
+        # No deps, but doesn't isntall binaries.
+        # Could be a dev package (headers, etc) or service (usr/libexec etc..)
+        for pkg in filtered:
+            if pkg.needed_by == 0 and not pkg.has_binaries:
+                self.add_row(pkg.name, str(pkg.has_binaries), str(pkg.needed_by))
+
+        # Has binaries, but also dependents.
+        for pkg in filtered:
+            if pkg.has_binaries and pkg.needed_by > 0:
+                self.add_row(pkg.name, str(pkg.has_binaries), str(pkg.needed_by))
+
+
+        # Least likely to be our choice, no deps and installs binaries
+        for pkg in filtered:
+            if pkg.needed_by == 0 and pkg.has_binaries:
+                self.add_row(pkg.name, str(pkg.has_binaries), str(pkg.needed_by))
+        await self.send_row_changed()
 
 
 from textual.reactive import reactive
@@ -124,9 +166,10 @@ from textual.reactive import reactive
 class InfoDisplay(Static):
     """Widget of the information pane."""
     text = reactive("text")
+    dependents = reactive("text")
 
     def render(self) -> str:
-        return f"info: {self.text}!"
+        return f"{self.text} \n\nNeeded by:\n\t{self.dependents}"
 
     def on_mount(self):
         """Stylish"""
@@ -148,7 +191,9 @@ class ThatApp(App):
 
     def on_list_display_row_changed(self, message: ListDisplay.RowChanged) -> None:
         """Recieves RowChanged events from ListDisplay class."""
-        self.query_one(InfoDisplay).text = message.package
+        self.query_one(InfoDisplay).text = message.package.info
+        deps = "\n\t".join(message.package._rdepends)
+        self.query_one(InfoDisplay).dependents = deps
 
 
     async def on_input_changed(self, message: Input.Changed) -> None:
@@ -188,7 +233,9 @@ class ThatApp(App):
     def action_exit_app(self) -> None:
         """When we want out."""
         self.exit()
-
+# Todo, mark remove
+# https://github.com/rpm-software-management/dnf/blob/master/dnf/cli/commands/mark.py
+# has details
 
 if __name__ == "__main__":
     app = ThatApp()
