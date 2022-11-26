@@ -255,7 +255,7 @@ class ThatApp(App[List[str]]):
         self.query_one(InfoDisplay).write("")
         self.query_one(InfoDisplay).write(message.package._pkg.description)
         deps = Markdown(
-            "### Packages that need this:\n" + "  \n".join(message.package._rdepends)
+            "### Packages that need this:\n    " +  " ".join(message.package._rdepends)
         )
         self.query_one("#extra").update(deps)
 
