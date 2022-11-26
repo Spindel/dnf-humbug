@@ -64,7 +64,7 @@ class Package:
     name: str
     needed_by: int
     info: str
-    has_binaries: bool
+    binaries: int
     _pkg: Any
     _rdepends: List[Any]
 
@@ -74,12 +74,15 @@ class Package:
     def __str__(self) -> str:
         return self.name
 
+def pkg_binaries(pkg) -> int:
+    binaries = sum(["bin/" in s for s in pkg.files])
+    return binaries
+
 
 def filter_packages(packages: List[Pkg], depends, rdepends):
     result = []
     for i, pkg in enumerate(packages):
         if pkg.reason == "user":
-            has_binaries = any("bin/" in s for s in pkg.files)
             # rdepends can have multiple (duplicate) entries, deduplicate first.
             unique_deps = set(rdepends[i])
             needed_by = len(unique_deps)
@@ -89,7 +92,7 @@ def filter_packages(packages: List[Pkg], depends, rdepends):
                 name=str(pkg),
                 needed_by=needed_by,
                 info=pkg.summary,
-                has_binaries=has_binaries,
+                binaries=pkg_binaries(pkg),
                 _pkg=pkg,
                 _rdepends=_rdepends,
             )
@@ -166,9 +169,11 @@ class ListDisplay(DataTable):
         await self.re_sort_display()
 
     async def re_sort_display(self, column: int = -1):
+        """As we cannot sort the data without re-adding it, this re-adds the
+        data."""
         self.clear()
         rows = [
-            (pkg.name, pkg.has_binaries, pkg.needed_by) for pkg in self.pkgs.values()
+            (pkg.name, pkg_binaries(pkg._pkg), pkg.needed_by) for pkg in self.pkgs.values()
         ]
 
         if column == -1:
@@ -179,9 +184,13 @@ class ListDisplay(DataTable):
             # And finally sort by binaries
             rows.sort(key=itemgetter(1), reverse=True)
         else:
-            rows.sort(key=itemgetter(column), reverse=True)
+            # We sort column 0 by name, the rest we sort decreasing
+            reverse = column > 0
+            rows.sort(key=itemgetter(column), reverse=reverse)
 
         for row in rows:
+            # All columns must be the same data-type, so cast it to string
+            # first.
             self.add_row(row[0], str(row[1]), str(row[2]))
         await self.send_row_changed()
 
