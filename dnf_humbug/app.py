@@ -179,7 +179,6 @@ class InfoDisplay(Static):
         return f"{self.text}\n\n{self.description}"
 
 
-
 from textual.containers import Horizontal, Vertical
 
 class ThatApp(App[List[str]]):
@@ -209,7 +208,6 @@ class ThatApp(App[List[str]]):
         column-span: 2;
     }
     #Unwanted {
-        background: pink;
     }
     #info {
         column-span: 2;
@@ -219,7 +217,6 @@ class ThatApp(App[List[str]]):
 
     }
     """
-    unwanted = []
 
     BINDINGS = [
         ("d", "toggle_dark", "Toggle dark mode"),
@@ -237,6 +234,7 @@ class ThatApp(App[List[str]]):
         self.query_one("#extra").update(deps)
 
     def on_mount(self, event: events.Mount) -> None:
+        self.unwanted = set()
         self.query_one(ListDisplay).focus()
 
     def compose(self) -> ComposeResult:
@@ -270,11 +268,24 @@ class ThatApp(App[List[str]]):
     def action_mark_unwanted(self) -> None:
         """When we want more info."""
         table = self.query_one(ListDisplay)
-        self.unwanted.append(table.current_package)
+        pkg = table.current_package._pkg
+        if pkg in self.unwanted:
+            self.unwanted.remove(pkg)
+        else:
+            self.unwanted.add(pkg)
+        names = sorted(pkg.name for pkg in self.unwanted)
+        untext = "\n".join(names)
+        self.query_one("#Unwanted").update(untext)
 
     def action_exit_app(self):
         """When we want out."""
-        self.exit(self.unwanted)
+        names = (pkg.name for pkg in self.unwanted)
+        output = " ".join(sorted(names))
+        if output:
+            result = f"dnf mark remove {output}"
+        else:
+            result = ""
+        self.exit(result)
 
 
 # Todo, mark remove
@@ -285,6 +296,4 @@ class ThatApp(App[List[str]]):
 def main():
     app = ThatApp()
     unwanted = app.run()
-    if unwanted:
-        output = " ".join(x._pkg.name for x in unwanted)
-        print(f"dnf mark remove {output}")
+    print(unwanted)
