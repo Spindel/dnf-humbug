@@ -134,8 +134,7 @@ class ListDisplay(DataTable):
 
     async def on_mount(self):
         """Stylish"""
-        self.styles.background = "darkblue"
-        self.styles.border = ("round", "white")
+        #self.styles.background = "darkblue"
         self.add_column("name")
         self.add_column("binaries")
         self.add_column("dependents")
@@ -169,25 +168,57 @@ class ListDisplay(DataTable):
         await self.send_row_changed()
 
 
+
 class InfoDisplay(Static):
     """Widget of the information pane."""
 
     text = reactive("text")
-    dependents = reactive("text")
+    description = reactive("text")
 
     def render(self) -> str:
-        return f"{self.text} \n\nNeeded by:\n\t{self.dependents}"
-
-    def on_mount(self):
-        """Stylish"""
-        self.styles.border = ("round", "yellow")
-        self.styles.dock = "bottom"
-        self.styles.width = "100%"
-        self.styles.height = "25%"
+        return f"{self.text}\n\n{self.description}"
 
 
-class ThatApp(App):
+
+from textual.containers import Horizontal, Vertical
+
+class ThatApp(App[List[str]]):
     """Start using an app toolkit."""
+    CSS= """
+    Screen {
+        layout: grid;
+        grid-size: 3 2;
+        grid-columns: 2fr 1fr;
+        grid-rows: 70% 30%;
+        layers: below above;
+
+    }
+    .box {
+        height: 100%;
+        border: solid green;
+        layer: below;
+    }
+    InfoDisplay {
+        border:  round yellow;
+    }
+    ListDisplay {
+        border: round white;
+        background: darkblue;
+    }
+    #list {
+        column-span: 2;
+    }
+    #Unwanted {
+        background: pink;
+    }
+    #info {
+        column-span: 2;
+    }
+    #extra {
+        height: 100%;
+
+    }
+    """
     unwanted = []
 
     BINDINGS = [
@@ -201,8 +232,9 @@ class ThatApp(App):
     def on_list_display_row_changed(self, message: ListDisplay.RowChanged) -> None:
         """Recieves RowChanged events from ListDisplay class."""
         self.query_one(InfoDisplay).text = message.package.info
-        deps = "\n\t".join(message.package._rdepends)
-        self.query_one(InfoDisplay).dependents = deps
+        self.query_one(InfoDisplay).description = message.package._pkg.description
+        deps = "Packages that need this: \n" + "\n".join(message.package._rdepends)
+        self.query_one("#extra").update(deps)
 
     def on_mount(self, event: events.Mount) -> None:
         self.query_one(ListDisplay).focus()
@@ -210,8 +242,10 @@ class ThatApp(App):
     def compose(self) -> ComposeResult:
         """Create child widgets for that App."""
         yield Header()
-        yield ListDisplay()
-        yield InfoDisplay("no info", id="info")
+        yield ListDisplay(id="list", classes="box")
+        yield Static("to_be_removed",id="Unwanted", classes="box")
+        yield InfoDisplay("no info", id="info", classes="box")
+        yield Static("empty", id="extra", classes="box")
         yield Footer()
 
     def action_toggle_dark(self) -> None:
@@ -238,7 +272,7 @@ class ThatApp(App):
         table = self.query_one(ListDisplay)
         self.unwanted.append(table.current_package)
 
-    def action_exit_app(self) -> List[str]:
+    def action_exit_app(self):
         """When we want out."""
         self.exit(self.unwanted)
 
@@ -251,5 +285,6 @@ class ThatApp(App):
 def main():
     app = ThatApp()
     unwanted = app.run()
-    output = " ".join(x._pkg.name for x in unwanted)
-    print(f"dnf mark remove {output}")
+    if unwanted:
+        output = " ".join(x._pkg.name for x in unwanted)
+        print(f"dnf mark remove {output}")
