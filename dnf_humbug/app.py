@@ -101,6 +101,13 @@ class ListDisplay(DataTable):
         super().__init__(*args, **kws)
         self.pkgs = {}
 
+    @property
+    def current_package(self) -> Package:
+        """Get the current package selected."""
+        name = self.data[self.cursor_cell.row][0]
+        package = self.pkgs[name]
+        return package
+
     class RowChanged(Message):
         """Event sent when we change the displayed package in the list."""
 
@@ -181,10 +188,13 @@ class InfoDisplay(Static):
 
 class ThatApp(App):
     """Start using an app toolkit."""
+    unwanted = []
 
     BINDINGS = [
         ("d", "toggle_dark", "Toggle dark mode"),
-        ("i", "show_info", "Show more info"),
+        ("i", "show_info", "Show description"),
+        ("f", "show_files", "Show files"),
+        ("m", "mark_unwanted", "Mark as unwanted"),
         ("escape", "exit_app", "Time to escape"),
     ]
 
@@ -211,14 +221,26 @@ class ThatApp(App):
     def action_show_info(self) -> None:
         """When we want more info."""
         table = self.query_one(ListDisplay)
-        name = table.data[table.cursor_cell.row][0]
-        package = table.pkgs.get(name)
+        package = table.current_package
         if package:
             self.query_one(InfoDisplay).text = package._pkg.description
 
-    def action_exit_app(self) -> None:
+
+    def action_show_files(self) -> None:
+        """When we want file info."""
+        table = self.query_one(ListDisplay)
+        package = table.current_package
+        if package:
+            self.query_one(InfoDisplay).text = "\n".join(package._pkg.files)
+
+    def action_mark_unwanted(self) -> None:
+        """When we want more info."""
+        table = self.query_one(ListDisplay)
+        self.unwanted.append(table.current_package)
+
+    def action_exit_app(self) -> List[str]:
         """When we want out."""
-        self.exit()
+        self.exit(self.unwanted)
 
 
 # Todo, mark remove
@@ -228,8 +250,6 @@ class ThatApp(App):
 
 def main():
     app = ThatApp()
-    app.run()
-
-
-if __name__ == "__main__":
-    main()
+    unwanted = app.run()
+    output = " ".join(x._pkg.name for x in unwanted)
+    print(f"dnf mark remove {output}")
