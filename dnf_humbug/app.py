@@ -260,6 +260,8 @@ class ThatApp(App[List[str]]):
         self.query_one("#extra").update(deps)
 
     def on_mount(self, event: events.Mount) -> None:
+        self.title = "dnf....humbug"
+        self.sub_title = "List of packages DNF thinks you want."
         self.unwanted = set()
 
     def compose(self) -> ComposeResult:
