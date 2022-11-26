@@ -1,19 +1,16 @@
-import os
-import asyncio
+from dataclasses import dataclass
+from typing import Any, List
 
-import dnf
-import libdnf.transaction
+# dnf is not typed for mypy
+import dnf  # type: ignore
+import libdnf.transaction  # type: ignore
+from dnf.package import Package as Pkg  # type: ignore
 
+from textual import events
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, Input
-
-
-from textual.containers import Container
-from textual.widgets import Button, Header, Footer, Static
-from textual import events
-from textual.widgets import DataTable
-from textual import events
 from textual.message import Message, MessageTarget
+from textual.reactive import reactive
+from textual.widgets import Header, Footer, Static, DataTable
 
 
 def scan_packges():
@@ -26,7 +23,7 @@ def scan_packges():
 
     print("Querying rpm database")
     query = dnf.sack._rpmdb_sack(base).query().apply()
-    for i,pkg in enumerate(query):
+    for i, pkg in enumerate(query):
         pkgmap[pkg] = i
         packages.append(pkg)
         rdepends.append([])
@@ -37,31 +34,30 @@ def scan_packges():
 
     print("Building dependency tree")
     for i, pkg in enumerate(packages):
-       for req in pkg.requires:
-           sreq = str(req)
-           if sreq.startswith('rpmlib('):
-               continue
-           if sreq == 'solvable:prereqmarker':
-               continue
-           for dpkg in query.filter(provides=req):
+        for req in pkg.requires:
+            sreq = str(req)
+            if sreq.startswith("rpmlib("):
+                continue
+            if sreq == "solvable:prereqmarker":
+                continue
+            for dpkg in query.filter(provides=req):
                 providers.add(pkgmap[dpkg])
-           if len(providers) == 1 and i not in providers:
+            if len(providers) == 1 and i not in providers:
                 deps.update(providers)
-           providers.clear()
-           deplist = list(deps)
-           deps.clear()
-           depends.append(deplist)
-           for j in deplist:
-               rdepends[j].append(i)
+            providers.clear()
+            deplist = list(deps)
+            deps.clear()
+            depends.append(deplist)
+            for j in deplist:
+                rdepends[j].append(i)
 
     return packages, depends, rdepends
 
-from dataclasses import dataclass
-from typing import Any, List
 
 @dataclass
 class Package:
     """Package that we may want to remove."""
+
     name: str
     needed_by: int
     info: str
@@ -76,31 +72,38 @@ class Package:
         return self.name
 
 
-def filter_packages(packages, depends, rdepends):
+def filter_packages(packages: List[Pkg], depends, rdepends):
     result = []
-    print("Filtering results")
     for i, pkg in enumerate(packages):
         if pkg.reason == "user":
             has_binaries = any("bin/" in s for s in pkg.files)
-            needed_by = len(rdepends[i])
-            _rdepends = [str(packages[n]) for n in rdepends[i]]
+            # rdepends can have multiple (duplicate) entries, deduplicate first.
+            unique_deps = set(rdepends[i])
+            needed_by = len(unique_deps)
+            _rdepends = [str(packages[n]) for n in unique_deps]
 
-            p = Package(name=str(pkg), needed_by=needed_by,
-                        info=pkg.description, has_binaries=has_binaries,
-                        _pkg=pkg, _rdepends=_rdepends)
+            p = Package(
+                name=str(pkg),
+                needed_by=needed_by,
+                info=pkg.summary,
+                has_binaries=has_binaries,
+                _pkg=pkg,
+                _rdepends=_rdepends,
+            )
             result.append(p)
     return result
 
 
-
 class ListDisplay(DataTable):
     """Widget of our list of thingies."""
+
     def __init__(self, *args, **kws):
         super().__init__(*args, **kws)
         self.pkgs = {}
 
     class RowChanged(Message):
         """Event sent when we change the displayed package in the list."""
+
         def __init__(self, sender: MessageTarget, package: Package) -> None:
             self.package = package
             super().__init__(sender)
@@ -152,7 +155,6 @@ class ListDisplay(DataTable):
             if pkg.has_binaries and pkg.needed_by > 0:
                 self.add_row(pkg.name, str(pkg.has_binaries), str(pkg.needed_by))
 
-
         # Least likely to be our choice, no deps and installs binaries
         for pkg in filtered:
             if pkg.needed_by == 0 and pkg.has_binaries:
@@ -160,11 +162,9 @@ class ListDisplay(DataTable):
         await self.send_row_changed()
 
 
-from textual.reactive import reactive
-
-
 class InfoDisplay(Static):
     """Widget of the information pane."""
+
     text = reactive("text")
     dependents = reactive("text")
 
@@ -176,7 +176,7 @@ class InfoDisplay(Static):
         self.styles.border = ("round", "yellow")
         self.styles.dock = "bottom"
         self.styles.width = "100%"
-        self.styles.height = "30%"
+        self.styles.height = "25%"
 
 
 class ThatApp(App):
@@ -184,10 +184,9 @@ class ThatApp(App):
 
     BINDINGS = [
         ("d", "toggle_dark", "Toggle dark mode"),
-        ("spacebar", "show_info", "Show more info"),
+        ("i", "show_info", "Show more info"),
         ("escape", "exit_app", "Time to escape"),
     ]
-
 
     def on_list_display_row_changed(self, message: ListDisplay.RowChanged) -> None:
         """Recieves RowChanged events from ListDisplay class."""
@@ -195,25 +194,8 @@ class ThatApp(App):
         deps = "\n\t".join(message.package._rdepends)
         self.query_one(InfoDisplay).dependents = deps
 
-
-    async def on_input_changed(self, message: Input.Changed) -> None:
-        """Event handler on input."""
-        if message.value:
-            asyncio.create_task(self.lookup_info(message.value))
-        else:
-            self.query_one("#info", InfoDisplay).update("empty")
-
-    async def lookup_info(self, word: str) -> None:
-        """check out the word"""
-        # Do some logic here
-        self.query_one("#info", "InfoDisplay").update(word + "word")
-
     def on_mount(self, event: events.Mount) -> None:
         self.query_one(ListDisplay).focus()
-
-#    def on_list_display_selected(self):
-#        self.query_one(ListDisplay).update("Selected once")
-
 
     def compose(self) -> ComposeResult:
         """Create child widgets for that App."""
@@ -228,15 +210,26 @@ class ThatApp(App):
 
     def action_show_info(self) -> None:
         """When we want more info."""
-        self.query_one("#info").update("Show info")
+        table = self.query_one(ListDisplay)
+        name = table.data[table.cursor_cell.row][0]
+        package = table.pkgs.get(name)
+        if package:
+            self.query_one(InfoDisplay).text = package._pkg.description
 
     def action_exit_app(self) -> None:
         """When we want out."""
         self.exit()
+
+
 # Todo, mark remove
 # https://github.com/rpm-software-management/dnf/blob/master/dnf/cli/commands/mark.py
 # has details
 
-if __name__ == "__main__":
+
+def main():
     app = ThatApp()
     app.run()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,14 @@
+[project]
+name = "dnf-humbug"
+version = "0.0.2"
+dependencies = [
+    "textual",
+]
+license = {text = "GPL-2.0-or-later"}
+
+[project.scripts]
+dnf-humbug = "dnf_humbug.app:main"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
