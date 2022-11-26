@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Any, List
+from rich.markdown import Markdown
 
 # dnf is not typed for mypy
 import dnf  # type: ignore
@@ -11,6 +12,7 @@ from textual.app import App, ComposeResult
 from textual.message import Message, MessageTarget
 from textual.reactive import reactive
 from textual.widgets import Header, Footer, Static, DataTable
+from textual.widgets import TextLog
 
 
 def scan_packges():
@@ -134,7 +136,7 @@ class ListDisplay(DataTable):
 
     async def on_mount(self):
         """Stylish"""
-        #self.styles.background = "darkblue"
+        # self.styles.background = "darkblue"
         self.add_column("name")
         self.add_column("binaries")
         self.add_column("dependents")
@@ -168,22 +170,21 @@ class ListDisplay(DataTable):
         await self.send_row_changed()
 
 
-
-class InfoDisplay(Static):
+class InfoDisplay(TextLog):
     """Widget of the information pane."""
 
     text = reactive("text")
     description = reactive("text")
 
-    def render(self) -> str:
-        return f"{self.text}\n\n{self.description}"
 
+#    def render(self) -> str:
+#        self.write(f"{self.text}\n\n{self.description}")
 
-from textual.containers import Horizontal, Vertical
 
 class ThatApp(App[List[str]]):
     """Start using an app toolkit."""
-    CSS= """
+
+    CSS = """
     Screen {
         layout: grid;
         grid-size: 3 2;
@@ -198,23 +199,28 @@ class ThatApp(App[List[str]]):
         layer: below;
     }
     InfoDisplay {
-        border:  round yellow;
+        layout: vertical;
     }
     ListDisplay {
-        border: round white;
-        background: darkblue;
     }
     #list {
         column-span: 2;
     }
     #Unwanted {
     }
+    #extra {
+    }
     #info {
         column-span: 2;
     }
-    #extra {
-        height: 100%;
-
+    .box:blur {
+        border: round white;
+    }
+    .box:focus {
+        background: darkblue;
+        border: round yellow;
+        overflow-y: scroll;
+        overflow: auto;
     }
     """
 
@@ -228,22 +234,29 @@ class ThatApp(App[List[str]]):
 
     def on_list_display_row_changed(self, message: ListDisplay.RowChanged) -> None:
         """Recieves RowChanged events from ListDisplay class."""
-        self.query_one(InfoDisplay).text = message.package.info
-        self.query_one(InfoDisplay).description = message.package._pkg.description
-        deps = "Packages that need this: \n" + "\n".join(message.package._rdepends)
+        self.query_one(InfoDisplay).clear()
+        self.query_one(InfoDisplay).write(message.package.info)
+        self.query_one(InfoDisplay).write("")
+        self.query_one(InfoDisplay).write(message.package._pkg.description)
+        deps = Markdown(
+            "### Packages that need this:\n" + "\n".join(message.package._rdepends)
+        )
         self.query_one("#extra").update(deps)
 
     def on_mount(self, event: events.Mount) -> None:
         self.unwanted = set()
-        self.query_one(ListDisplay).focus()
 
     def compose(self) -> ComposeResult:
         """Create child widgets for that App."""
         yield Header()
-        yield ListDisplay(id="list", classes="box")
-        yield Static("to_be_removed",id="Unwanted", classes="box")
-        yield InfoDisplay("no info", id="info", classes="box")
-        yield Static("empty", id="extra", classes="box")
+        display = ListDisplay(id="list", classes="box")
+        display.focus()
+        yield display
+        yield Static(
+            Markdown("### Marked these as unwanted"), id="Unwanted", classes="box"
+        )
+        yield InfoDisplay(id="info", classes="box")
+        yield Static("", id="extra", classes="box")
         yield Footer()
 
     def action_toggle_dark(self) -> None:
@@ -253,21 +266,29 @@ class ThatApp(App[List[str]]):
     def action_show_info(self) -> None:
         """When we want more info."""
         table = self.query_one(ListDisplay)
+        table.focus()
+        info = self.query_one(InfoDisplay)
         package = table.current_package
         if package:
-            self.query_one(InfoDisplay).text = package._pkg.description
-
+            info.clear()
+            info.write(package._pkg.description)
 
     def action_show_files(self) -> None:
         """When we want file info."""
         table = self.query_one(ListDisplay)
         package = table.current_package
         if package:
-            self.query_one(InfoDisplay).text = "\n".join(package._pkg.files)
+            content = "\n".join(row for row in package._pkg.files)
+            info = self.query_one(InfoDisplay)
+            info.clear()
+            info.write(content)
+            info.focus()
+            # info.scroll_home()
 
     def action_mark_unwanted(self) -> None:
         """When we want more info."""
         table = self.query_one(ListDisplay)
+        table.focus()
         pkg = table.current_package._pkg
         if pkg in self.unwanted:
             self.unwanted.remove(pkg)
