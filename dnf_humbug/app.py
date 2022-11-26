@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from operator import itemgetter
 from typing import Any, List
 from rich.markdown import Markdown
 
@@ -119,7 +120,10 @@ class ListDisplay(DataTable):
 
     async def send_row_changed(self) -> None:
         """Send an row changed update event."""
-        package_name = self.data[self.cursor_cell.row][0]
+        row = self.cursor_cell.row
+        if row < 0:
+            row = 0
+        package_name = self.data[row][0]
         package = self.pkgs.get(package_name)
         if package is not None:
             await self.emit(self.RowChanged(self, package=package))
@@ -134,39 +138,51 @@ class ListDisplay(DataTable):
         super().key_up(event)
         await self.send_row_changed()
 
+    async def on_click(self, event: events.Click) -> None:
+        # User clicked on a data-row. perform default
+        if self.hover_cell.row > 0:
+            super().on_click(event)
+            return
+
+        # User clicked on the header, re-do the content.
+        col = self.hover_cell.column
+        if 0 <= col < 3:
+            await self.re_sort_display(column=col)
+        else:
+            # Not a known column, just use default
+            await self.re_sort_display()
+
     async def on_mount(self):
         """Stylish"""
-        # self.styles.background = "darkblue"
         self.add_column("name")
         self.add_column("binaries")
         self.add_column("dependents")
 
         packages, depends, rdepends = scan_packges()
         filtered = filter_packages(packages, depends, rdepends)
-
         for pkg in filtered:
             self.pkgs[pkg.name] = pkg
-        # Quite likely, no binaries, and nothing needs it.
-        # Could be dev package, etc.
-        for pkg in filtered:
-            if (not pkg.has_binaries) and pkg.needed_by > 0:
-                self.add_row(pkg.name, str(pkg.has_binaries), str(pkg.needed_by))
 
-        # No deps, but doesn't isntall binaries.
-        # Could be a dev package (headers, etc) or service (usr/libexec etc..)
-        for pkg in filtered:
-            if pkg.needed_by == 0 and not pkg.has_binaries:
-                self.add_row(pkg.name, str(pkg.has_binaries), str(pkg.needed_by))
+        await self.re_sort_display()
 
-        # Has binaries, but also dependents.
-        for pkg in filtered:
-            if pkg.has_binaries and pkg.needed_by > 0:
-                self.add_row(pkg.name, str(pkg.has_binaries), str(pkg.needed_by))
+    async def re_sort_display(self, column: int = -1):
+        self.clear()
+        rows = [
+            (pkg.name, pkg.has_binaries, pkg.needed_by) for pkg in self.pkgs.values()
+        ]
 
-        # Least likely to be our choice, no deps and installs binaries
-        for pkg in filtered:
-            if pkg.needed_by == 0 and pkg.has_binaries:
-                self.add_row(pkg.name, str(pkg.has_binaries), str(pkg.needed_by))
+        if column == -1:
+            # Sort by name first
+            rows.sort(key=itemgetter(0))
+            # Then re-sort by dependencies
+            rows.sort(key=itemgetter(2), reverse=True)
+            # And finally sort by binaries
+            rows.sort(key=itemgetter(1), reverse=True)
+        else:
+            rows.sort(key=itemgetter(column), reverse=True)
+
+        for row in rows:
+            self.add_row(row[0], str(row[1]), str(row[2]))
         await self.send_row_changed()
 
 
@@ -239,7 +255,7 @@ class ThatApp(App[List[str]]):
         self.query_one(InfoDisplay).write("")
         self.query_one(InfoDisplay).write(message.package._pkg.description)
         deps = Markdown(
-            "### Packages that need this:\n" + "\n".join(message.package._rdepends)
+            "### Packages that need this:\n" + "  \n".join(message.package._rdepends)
         )
         self.query_one("#extra").update(deps)
 
