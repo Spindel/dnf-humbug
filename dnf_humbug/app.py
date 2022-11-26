@@ -271,7 +271,7 @@ class ThatApp(App[List[str]]):
         display.focus()
         yield display
         yield Static(
-            Markdown("### Marked these as unwanted"), id="Unwanted", classes="box"
+            Markdown("### Final command line"), id="Unwanted", classes="box"
         )
         yield InfoDisplay(id="info", classes="box")
         yield Static("", id="extra", classes="box")
@@ -313,7 +313,7 @@ class ThatApp(App[List[str]]):
         else:
             self.unwanted.add(pkg)
         names = sorted(pkg.name for pkg in self.unwanted)
-        untext = "\n".join(names)
+        untext = Markdown("### Final command line\n" + "    dnf mark remove\n     " + "\n     ".join(names))
         self.query_one("#Unwanted").update(untext)
 
     def action_exit_app(self):
