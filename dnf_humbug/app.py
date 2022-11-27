@@ -251,9 +251,9 @@ class ThatApp(App[List[str]]):
 
     BINDINGS = [
         ("d", "toggle_dark", "Toggle dark mode"),
-        ("i", "show_info", "Show description"),
-        ("f", "show_files", "Show files"),
-        ("m", "mark_unwanted", "Mark as unwanted"),
+        ("m", "mark_unwanted", "Toggle (un)wanted"),
+        ("i", "show_info", "Show package description"),
+        ("f", "show_files", "Show package files"),
         ("escape", "exit_app", "Time to escape"),
     ]
 
