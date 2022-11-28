@@ -260,10 +260,12 @@ class ThatApp(App[List[str]]):
     def on_list_display_row_changed(self, message: ListDisplay.RowChanged) -> None:
         """Recieves RowChanged events from ListDisplay class."""
         self.query_one(InfoDisplay).clear()
-        self.query_one(InfoDisplay).write(message.package.info)
-        self.query_one(InfoDisplay).write("")
-        self.query_one(InfoDisplay).write(message.package._pkg.description)
+        info = str(message.package._pkg.summary)
+        desc = str(message.package._pkg.description)
         name = str(message.package._pkg)
+        self.query_one(InfoDisplay).write(info)
+        self.query_one(InfoDisplay).write("")
+        self.query_one(InfoDisplay).write(desc)
         deps = Markdown(
             f"### Packages that need {name}\n    " +  " ".join(message.package._rdepends)
         )
