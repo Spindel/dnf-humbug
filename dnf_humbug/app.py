@@ -63,10 +63,9 @@ class Package:
 
     name: str
     needed_by: int
-    info: str
     binaries: int
-    _pkg: Any
-    _rdepends: List[Any]
+    pkg: Any
+    rdepends: List[Any]
 
     def __repr__(self) -> str:
         return self.name
@@ -86,15 +85,14 @@ def filter_packages(packages: List[Pkg], depends, rdepends):
             # rdepends can have multiple (duplicate) entries, deduplicate first.
             unique_deps = set(rdepends[i])
             needed_by = len(unique_deps)
-            _rdepends = [str(packages[n]) for n in unique_deps]
+            pkg_rdepends = [str(packages[n]) for n in unique_deps]
 
             p = Package(
                 name=str(pkg),
                 needed_by=needed_by,
-                info=pkg.summary,
                 binaries=pkg_binaries(pkg),
-                _pkg=pkg,
-                _rdepends=_rdepends,
+                pkg=pkg,
+                rdepends=pkg_rdepends,
             )
             result.append(p)
     return result
@@ -163,6 +161,9 @@ class ListDisplay(DataTable):
 
         packages, depends, rdepends = scan_packges()
         filtered = filter_packages(packages, depends, rdepends)
+        for p in filtered:
+            assert p.name == str(p.pkg)
+
         for pkg in filtered:
             self.pkgs[pkg.name] = pkg
 
@@ -173,7 +174,7 @@ class ListDisplay(DataTable):
         data."""
         self.clear()
         rows = [
-            (pkg.name, pkg_binaries(pkg._pkg), pkg.needed_by) for pkg in self.pkgs.values()
+            (pkg.name, pkg_binaries(pkg.pkg), pkg.needed_by) for pkg in self.pkgs.values()
         ]
 
         if column == -1:
@@ -267,7 +268,7 @@ class ThatApp(App[List[str]]):
         self.query_one(InfoDisplay).write("")
         self.query_one(InfoDisplay).write(desc)
         deps = Markdown(
-            f"### Packages that need {name}\n    " +  " ".join(message.package._rdepends)
+            f"### Packages that need {name}\n    " +  " ".join(message.package.rdepends)
         )
         self.query_one("#extra").update(deps)
 
@@ -298,18 +299,21 @@ class ThatApp(App[List[str]]):
         table = self.query_one(ListDisplay)
         table.focus()
         info = self.query_one(InfoDisplay)
+        info.clear()
+        info.lines =[]
         package = table.current_package
         if package:
             info.clear()
-            info.write(package._pkg.description)
+            info.write(package.pkg.description)
 
     def action_show_files(self) -> None:
         """When we want file info."""
         table = self.query_one(ListDisplay)
         package = table.current_package
         if package:
-            content = "\n".join(row for row in package._pkg.files)
+            content = "\n".join(row for row in package.pkg.files)
             info = self.query_one(InfoDisplay)
+            info.lines.clear()
             info.clear()
             info.write(content)
             info.focus()
@@ -319,7 +323,7 @@ class ThatApp(App[List[str]]):
         """When we want more info."""
         table = self.query_one(ListDisplay)
         table.focus()
-        pkg = table.current_package._pkg
+        pkg = table.current_package.pkg
         if pkg in self.unwanted:
             self.unwanted.remove(pkg)
         else:
