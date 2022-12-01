@@ -14,6 +14,7 @@ from textual.message import Message, MessageTarget
 from textual.reactive import reactive
 from textual.widgets import Header, Footer, Static, DataTable
 from textual.widgets import TextLog
+from rich.text import Text
 
 
 def scan_packges():
@@ -72,6 +73,7 @@ class Package:
 
     def __str__(self) -> str:
         return self.name
+
 
 def pkg_binaries(pkg) -> int:
     binaries = sum(["bin/" in s for s in pkg.files])
@@ -164,8 +166,8 @@ class ListDisplay(DataTable):
         for p in filtered:
             assert p.name == str(p.pkg)
 
-        for pkg in filtered:
-            self.pkgs[pkg.name] = pkg
+        for p in filtered:
+            self.pkgs[str(p.pkg)] = p
 
         await self.re_sort_display()
 
@@ -174,7 +176,7 @@ class ListDisplay(DataTable):
         data."""
         self.clear()
         rows = [
-            (pkg.name, pkg_binaries(pkg.pkg), pkg.needed_by) for pkg in self.pkgs.values()
+            (str(p.pkg), pkg_binaries(p.pkg), p.needed_by) for p in self.pkgs.values()
         ]
 
         if column == -1:
@@ -196,11 +198,17 @@ class ListDisplay(DataTable):
         await self.send_row_changed()
 
 
-class InfoDisplay(TextLog):
+class InfoDisplay(TextLog, can_focus=True):
     """Widget of the information pane."""
 
     text = reactive("text")
     description = reactive("text")
+
+    def clear(self):
+        super().clear()
+        # Manually clean the line cache, otherwise it will contain stale
+        # refernces
+        self._line_cache.clear()
 
 
 #    def render(self) -> str:
@@ -260,15 +268,20 @@ class ThatApp(App[List[str]]):
 
     def on_list_display_row_changed(self, message: ListDisplay.RowChanged) -> None:
         """Recieves RowChanged events from ListDisplay class."""
-        self.query_one(InfoDisplay).clear()
-        info = str(message.package._pkg.summary)
-        desc = str(message.package._pkg.description)
-        name = str(message.package._pkg)
-        self.query_one(InfoDisplay).write(info)
-        self.query_one(InfoDisplay).write("")
-        self.query_one(InfoDisplay).write(desc)
+        table = self.query_one(ListDisplay)
+        package = table.current_package
+        # package = message.package
+        info = str(package.pkg.summary)
+        desc = str(package.pkg.description)
+        name = str(package.pkg)
+        assert str(package.pkg) == message.package.name
+        idt = self.query_one(InfoDisplay)
+        text = f"{package.pkg.summary}\n\n{package.pkg.description}"
+        idt.write(text)
+        idt.clear()
+        idt.write(text)
         deps = Markdown(
-            f"### Packages that need {name}\n    " +  " ".join(message.package.rdepends)
+            f"### Packages that need {name}\n    " + " ".join(message.package.rdepends)
         )
         self.query_one("#extra").update(deps)
 
@@ -283,10 +296,8 @@ class ThatApp(App[List[str]]):
         display = ListDisplay(id="list", classes="box")
         display.focus()
         yield display
-        yield Static(
-            Markdown("### Final command line"), id="Unwanted", classes="box"
-        )
-        yield InfoDisplay(id="info", classes="box")
+        yield Static(Markdown("### Final command line"), id="Unwanted", classes="box")
+        yield InfoDisplay(max_lines=50, id="info", classes="box")
         yield Static("", id="extra", classes="box")
         yield Footer()
 
@@ -300,10 +311,8 @@ class ThatApp(App[List[str]]):
         table.focus()
         info = self.query_one(InfoDisplay)
         info.clear()
-        info.lines =[]
         package = table.current_package
         if package:
-            info.clear()
             info.write(package.pkg.description)
 
     def action_show_files(self) -> None:
@@ -313,7 +322,6 @@ class ThatApp(App[List[str]]):
         if package:
             content = "\n".join(row for row in package.pkg.files)
             info = self.query_one(InfoDisplay)
-            info.lines.clear()
             info.clear()
             info.write(content)
             info.focus()
@@ -328,8 +336,12 @@ class ThatApp(App[List[str]]):
             self.unwanted.remove(pkg)
         else:
             self.unwanted.add(pkg)
-        names = sorted(pkg.name for pkg in self.unwanted)
-        untext = Markdown("### Final command line\n" + "    dnf mark remove\n     " + "\n     ".join(names))
+        names = sorted(str(p) for p in self.unwanted)
+        untext = Markdown(
+            "### Final command line\n"
+            + "    dnf mark remove\n     "
+            + "\n     ".join(names)
+        )
         self.query_one("#Unwanted").update(untext)
 
     def action_exit_app(self):
