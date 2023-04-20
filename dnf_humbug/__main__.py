@@ -1,5 +1,4 @@
-from .app import ThatApp
+from .app import main
 
 if __name__ == "__main__":
-    app = ThatApp()
-    app.run()
+    main()

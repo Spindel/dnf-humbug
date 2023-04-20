@@ -106,60 +106,50 @@ class ListDisplay(DataTable):
     def __init__(self, *args, **kws):
         super().__init__(*args, **kws)
         self.pkgs = {}
+        self.cursor_type = "row"
 
     @property
     def current_package(self) -> Package:
         """Get the current package selected."""
-        name = self.data[self.cursor_cell.row][0]
+        row_key, _col_key = self.coordinate_to_cell_key(self.cursor_coordinate)
+        name = self.get_row(row_key)[0]
+        # name = self.data[self.cursor_cell.row][0]
         package = self.pkgs[name]
         return package
 
     class RowChanged(Message):
         """Event sent when we change the displayed package in the list."""
 
-        def __init__(self, sender: MessageTarget, package: Package) -> None:
+        def __init__(self, package: Package) -> None:
             self.package = package
-            super().__init__(sender)
+            super().__init__()
 
-    async def send_row_changed(self) -> None:
+    async def on_data_table_row_highlighted(self, message) -> None:
+        package_name = self.get_row(message.row_key)[0]
+        await self.send_row_changed(package_name=package_name)
+
+    async def on_data_table_row_selected(self, message) -> None:
+        package_name = self.get_row(message.row_key)[0]
+        await self.send_row_changed(package_name=package_name)
+
+    async def on_data_table_header_selected(self, message) -> None:
+        reverse = message.column_index > 0
+        self.sort(message.column_key, reverse=reverse)
+        await self.send_row_changed()
+
+
+    async def send_row_changed(self, package_name=None) -> None:
         """Send an row changed update event."""
-        row = self.cursor_cell.row
-        if row < 0:
-            row = 0
-        package_name = self.data[row][0]
+        if package_name is None:
+            row_key, _col_key = self.coordinate_to_cell_key(self.cursor_coordinate)
+            package_name = self.get_row(row_key)[0]
         package = self.pkgs.get(package_name)
         if package is not None:
-            await self.emit(self.RowChanged(self, package=package))
-
-    async def key_down(self, event: events.Key) -> None:
-        """Hooked into key down to send row changed event to the app."""
-        super().key_down(event)
-        await self.send_row_changed()
-
-    async def key_up(self, event: events.Key) -> None:
-        """Hooked into key up to send row changed event to the app."""
-        super().key_up(event)
-        await self.send_row_changed()
-
-    async def on_click(self, event: events.Click) -> None:
-        # User clicked on a data-row. perform default
-        if self.hover_cell.row > 0:
-            super().on_click(event)
-            return
-
-        # User clicked on the header, re-do the content.
-        col = self.hover_cell.column
-        if 0 <= col < 3:
-            await self.re_sort_display(column=col)
-        else:
-            # Not a known column, just use default
-            await self.re_sort_display()
+            self.post_message(self.RowChanged(package=package))
 
     async def on_mount(self):
         """Stylish"""
-        self.add_column("name")
-        self.add_column("binaries")
-        self.add_column("dependents")
+        self.add_columns("name", "binaries", "dependents")
 
         packages, depends, rdepends = scan_packges()
         filtered = filter_packages(packages, depends, rdepends)
@@ -169,32 +159,17 @@ class ListDisplay(DataTable):
         for p in filtered:
             self.pkgs[str(p.pkg)] = p
 
-        await self.re_sort_display()
-
-    async def re_sort_display(self, column: int = -1):
-        """As we cannot sort the data without re-adding it, this re-adds the
-        data."""
-        self.clear()
         rows = [
             (str(p.pkg), pkg_binaries(p.pkg), p.needed_by) for p in self.pkgs.values()
         ]
-
-        if column == -1:
-            # Sort by name first
-            rows.sort(key=itemgetter(0))
-            # Then re-sort by dependencies
-            rows.sort(key=itemgetter(2), reverse=True)
-            # And finally sort by binaries
-            rows.sort(key=itemgetter(1), reverse=True)
-        else:
-            # We sort column 0 by name, the rest we sort decreasing
-            reverse = column > 0
-            rows.sort(key=itemgetter(column), reverse=reverse)
-
+        # Sort by name first
+        rows.sort(key=itemgetter(0))
+        # Then re-sort by dependencies
+        rows.sort(key=itemgetter(2), reverse=True)
+        # And finally sort by binaries
+        rows.sort(key=itemgetter(1), reverse=True)
         for row in rows:
-            # All columns must be the same data-type, so cast it to string
-            # first.
-            self.add_row(row[0], str(row[1]), str(row[2]))
+            self.add_row(row[0], row[1], row[2])
         await self.send_row_changed()
 
 
@@ -215,7 +190,7 @@ class InfoDisplay(TextLog, can_focus=True):
 #        self.write(f"{self.text}\n\n{self.description}")
 
 
-class ThatApp(App[List[str]]):
+class ThatApp(App[str]):
     """Start using an app toolkit."""
 
     CSS = """
