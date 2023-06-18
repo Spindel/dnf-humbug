@@ -1,20 +1,16 @@
 from dataclasses import dataclass
 from operator import itemgetter
-from typing import Any, List
-from rich.markdown import Markdown
+from typing import Any
 
 # dnf is not typed for mypy
 import dnf  # type: ignore
-import libdnf.transaction  # type: ignore
 from dnf.package import Package as Pkg  # type: ignore
-
+from rich.markdown import Markdown
 from textual import events
 from textual.app import App, ComposeResult
-from textual.message import Message, MessageTarget
+from textual.message import Message
 from textual.reactive import reactive
-from textual.widgets import Header, Footer, Static, DataTable
-from textual.widgets import TextLog
-from rich.text import Text
+from textual.widgets import DataTable, Footer, Header, Static, TextLog
 
 
 def scan_packges():
@@ -66,7 +62,7 @@ class Package:
     needed_by: int
     binaries: int
     pkg: Any
-    rdepends: List[Any]
+    rdepends: list[Any]
 
     def __repr__(self) -> str:
         return self.name
@@ -80,7 +76,7 @@ def pkg_binaries(pkg) -> int:
     return binaries
 
 
-def filter_packages(packages: List[Pkg], depends, rdepends):
+def filter_packages(packages: list[Pkg], _depends, rdepends):
     result = []
     for i, pkg in enumerate(packages):
         if pkg.reason == "user":
@@ -113,7 +109,6 @@ class ListDisplay(DataTable):
         """Get the current package selected."""
         row_key, _col_key = self.coordinate_to_cell_key(self.cursor_coordinate)
         name = self.get_row(row_key)[0]
-        # name = self.data[self.cursor_cell.row][0]
         package = self.pkgs[name]
         return package
 
@@ -136,7 +131,6 @@ class ListDisplay(DataTable):
         reverse = message.column_index > 0
         self.sort(message.column_key, reverse=reverse)
         await self.send_row_changed()
-
 
     async def send_row_changed(self, package_name=None) -> None:
         """Send an row changed update event."""
@@ -184,10 +178,6 @@ class InfoDisplay(TextLog, can_focus=True):
         # Manually clean the line cache, otherwise it will contain stale
         # refernces
         self._line_cache.clear()
-
-
-#    def render(self) -> str:
-#        self.write(f"{self.text}\n\n{self.description}")
 
 
 class ThatApp(App[str]):
@@ -258,7 +248,7 @@ class ThatApp(App[str]):
         name = str(package.pkg)
         self.update_info_display()
         deps = Markdown(
-            f"### Packages that need {name}\n    " + " ".join(message.package.rdepends)
+            f"### Packages that need {name}\n    " + " ".join(message.package.rdepends),
         )
         self.query_one("#extra").update(deps)
 
@@ -286,7 +276,7 @@ old, unwanted or obsolete packages around.
 DNF Humbug lists the __user installed__ packages, and lets you decide if you want
 to keep them or not.
 
-DNF Humbug does NOT remove any packages from your system, and only builds a
+DNF Humbug does **NOT** remove any packages from your system, and only builds a
 command line to help you.
 
 For example, a package that is marked __user installed__ but which has no
@@ -334,10 +324,12 @@ may indeed be a tool that was once wanted, but not anymore.
         else:
             self.unwanted.add(pkg)
         names = sorted(str(p) for p in self.unwanted)
+        # The amount of spaces after line-breaks are important due to markdown.
+        # Heading + code-format
+        indent = "\n    "
+        pkglist = f"{indent} ".join(names)
         untext = Markdown(
-            "### Final command line\n"
-            + "    dnf mark remove\n     "
-            + "\n     ".join(names)
+            f"### Final command line{indent}dnf mark remove{indent} " + pkglist,
         )
         self.query_one("#Unwanted").update(untext)
 
@@ -352,7 +344,7 @@ may indeed be a tool that was once wanted, but not anymore.
         self.exit(result)
 
 
-# Todo, mark remove
+# TODO, mark remove
 # https://github.com/rpm-software-management/dnf/blob/master/dnf/cli/commands/mark.py
 # has details
 
