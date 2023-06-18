@@ -241,20 +241,22 @@ class ThatApp(App[str]):
         ("escape", "exit_app", "Time to escape"),
     ]
 
+    def update_info_display(self):
+        """Only updates the info display, does not adjust scrolling or focus."""
+        table = self.query_one(ListDisplay)
+        package = table.current_package
+        text = f"{package.pkg.summary}\n\n{package.pkg.description}"
+
+        info = self.query_one(InfoDisplay)
+        info.clear()
+        info.write(text, scroll_end=False)
+
     def on_list_display_row_changed(self, message: ListDisplay.RowChanged) -> None:
         """Recieves RowChanged events from ListDisplay class."""
         table = self.query_one(ListDisplay)
         package = table.current_package
-        # package = message.package
-        info = str(package.pkg.summary)
-        desc = str(package.pkg.description)
         name = str(package.pkg)
-        assert str(package.pkg) == message.package.name
-        idt = self.query_one(InfoDisplay)
-        text = f"{package.pkg.summary}\n\n{package.pkg.description}"
-        idt.write(text)
-        idt.clear()
-        idt.write(text)
+        self.update_info_display()
         deps = Markdown(
             f"### Packages that need {name}\n    " + " ".join(message.package.rdepends)
         )
@@ -284,11 +286,7 @@ class ThatApp(App[str]):
         """When we want more info."""
         table = self.query_one(ListDisplay)
         table.focus()
-        info = self.query_one(InfoDisplay)
-        info.clear()
-        package = table.current_package
-        if package:
-            info.write(package.pkg.description)
+        self.update_info_display()
 
     def action_show_files(self) -> None:
         """When we want file info."""
@@ -298,9 +296,8 @@ class ThatApp(App[str]):
             content = "\n".join(row for row in package.pkg.files)
             info = self.query_one(InfoDisplay)
             info.clear()
-            info.write(content)
+            info.write(content, scroll_end=False)
             info.focus()
-            # info.scroll_home()
 
     def action_mark_unwanted(self) -> None:
         """When we want more info."""
