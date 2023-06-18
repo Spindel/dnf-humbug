@@ -289,7 +289,7 @@ may indeed be a tool that was once wanted, but not anymore.
 """
         yield display
         yield Static(Markdown(inital_help), id="Unwanted", classes="box")
-        yield InfoDisplay(max_lines=50, id="info", classes="box")
+        yield InfoDisplay(max_lines=None, auto_scroll=False, id="info", classes="box")
         yield Static("", id="extra", classes="box")
         yield Footer()
 

@@ -1,6 +1,6 @@
 [project]
 name = "dnf-humbug"
-version = "0.0.13"
+version = "0.0.14"
 dependencies = [
     "textual==0.27.0",
 ]
