@@ -272,8 +272,33 @@ class ThatApp(App[str]):
         yield Header()
         display = ListDisplay(id="list", classes="box")
         display.focus()
+        inital_help = """### What is this?
+DNF Humbug lists __user installed__ packages and lets you decide if you want
+them or not.
+
+DNF has a system to track which packages are __user installed__ and which ones
+are only dependencies (transitive or not), and can then automatically remove
+_unwanted_ packages.
+
+However, as entropy gathers, so do these __user installed__ packages, keeping
+old, unwanted or obsolete packages around.
+
+DNF Humbug lists the __user installed__ packages, and lets you decide if you want
+to keep them or not.
+
+DNF Humbug does NOT remove any packages from your system, and only builds a
+command line to help you.
+
+For example, a package that is marked __user installed__ but which has no
+binaries of it's own, and has multiple other packages depending on it, may be a
+library or a dev-package, and should probably be considered a transient
+dependency.
+
+And a package that has nothing depending on it, but installs a few binaries,
+may indeed be a tool that was once wanted, but not anymore.
+"""
         yield display
-        yield Static(Markdown("### Final command line"), id="Unwanted", classes="box")
+        yield Static(Markdown(inital_help), id="Unwanted", classes="box")
         yield InfoDisplay(max_lines=50, id="info", classes="box")
         yield Static("", id="extra", classes="box")
         yield Footer()
